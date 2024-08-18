@@ -19,4 +19,5 @@ unset(CPM_DOWNLOAD_VERSION)
 include(./cmake/install_cpm_packages.cmake)
 
 target_link_libraries(DebArchiveExtractor PRIVATE
-        fmt::fmt)
+        fmt::fmt
+        Boost::iostreams)
