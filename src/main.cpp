@@ -1,32 +1,103 @@
-#include <fstream>
-#include <filesystem>
+#include <cstdlib>
+#include <fmt/ostream.h>
 #include <iostream>
+#include <filesystem>
+#include <sstream>
 
-#include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/copy.hpp>
-#include <boost/iostreams/filter/gzip.hpp>
-#include <boost/iostreams/filter/zlib.hpp>
-#include <boost/iostreams/device/back_inserter.hpp>
+namespace Extraction
+{
+void
+extractDebPackageRaw(std::filesystem::path& inputFile, std::filesystem::path& outputFolder)
+{
+    std::string extractPackageCommand {};
+    {
+        std::stringstream sStream {};
+        sStream << "ar x --output " << outputFolder << " " << inputFile;
 
-#include <boost/iostreams/device/file.hpp>
+        extractPackageCommand = sStream.str();
+    }
 
-int main() {
-    std::filesystem::path inputFilePath{
-            "./text.txt.gz"};
-    std::filesystem::path outputFilePath{
-            "./text2.txt"};
+    fmt::println("Debug: {}", extractPackageCommand);
+    int errorStatus {std::system(extractPackageCommand.c_str())};
+    if (EXIT_SUCCESS != errorStatus)
+    {
+        exit(errorStatus);
+    }
+}
 
-    std::ifstream inputFileStream(inputFilePath,
-                                  std::ios_base::binary);
-    boost::iostreams::filtering_istream decompressingStream;
+void
+unpackFileWithNameStartingWith(std::filesystem::path& outputFolder, std::string_view fileNameStart)
+{
+    std::filesystem::directory_iterator outputFolderIter {outputFolder};
 
-    decompressingStream.push(boost::iostreams::gzip_decompressor());
-    decompressingStream.push(inputFileStream);
+    const auto isFileNameControl {
+    [fileNameStart](const auto& candidate)
+    {
+        return candidate.path().filename().string().starts_with(fileNameStart);
+    }};
+    const auto controlFileIter {std::ranges::find_if(outputFolderIter, isFileNameControl)};
+    if (end(outputFolderIter) == controlFileIter)
+    {
+        exit(EXIT_FAILURE);
+    }
 
-    std::ofstream outputFileStream{outputFilePath,
-                                   std::ios_base::binary};
+    if (!controlFileIter->path().has_extension())
+    {
+        fmt::println("Debug: Control is not archived.");
+        return;
+    }
 
-    outputFileStream << decompressingStream.rdbuf();
+    const auto controlArchive {controlFileIter->path()};
 
-    return 0;
+    std::string unpackCommand {};
+    {
+        std::stringstream sStream {};
+
+        sStream << "tar -xf " << controlArchive << " --directory " << outputFolder << " && "
+                << "rm " << controlArchive;
+        unpackCommand = sStream.str();
+    }
+
+    fmt::println("Debug: {}", unpackCommand);
+
+    int errorStatus {std::system(unpackCommand.c_str())};
+    if (EXIT_SUCCESS != errorStatus)
+    {
+        exit(errorStatus);
+    }
+}
+}  // namespace Extraction
+
+int
+main(int numberOfArguments, char* arguments[])
+{
+    if (numberOfArguments != 3)
+    {
+        fmt::println(std::cerr,
+                     "Error: invalid usage. Two arguments expected.\n"
+                     "Valid usage: DebArchiveExtractor <path to input DEB package> <directory "
+                     "where extracted data is placed>");
+        return EXIT_FAILURE;
+    }
+
+    std::filesystem::path inputFile {canonical(std::filesystem::absolute(arguments[1]))};
+    std::filesystem::path outputFolder {arguments[2]};
+
+    if (!is_regular_file(inputFile))
+    {
+        fmt::println(std::cerr, "Error: First argument must be a file.");
+        return EXIT_FAILURE;
+    }
+
+    if (!exists(outputFolder) || !is_directory(outputFolder))
+    {
+        fmt::println(std::cerr, "Error: Second argument must be an existing directory.");
+        return EXIT_FAILURE;
+    }
+
+    Extraction::extractDebPackageRaw(inputFile, outputFolder);
+    Extraction::unpackFileWithNameStartingWith(outputFolder, "control");
+    Extraction::unpackFileWithNameStartingWith(outputFolder, "data");
+
+    return EXIT_SUCCESS;
 }

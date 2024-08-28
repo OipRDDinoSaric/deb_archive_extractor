@@ -21,5 +21,4 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/install_cpm_packages.cmake)
 
 target_link_libraries(DebArchiveExtractor PRIVATE
         fmt::fmt
-        Boost::iostreams
 )
